@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "node",
+    "baseUrl": ".",
+    "outDir": "dist/",
+    "sourceMap": true,
+    "lib": ["esnext", "DOM"],
+    "declaration": true,
+    "alwaysStrict": true,
+    "noImplicitAny": true,
+    "noImplicitThis": true,
+    "esModuleInterop": true,
+    "strictNullChecks": true,
+    "skipLibCheck": true,
+  },
+  "types": [
+    "vite/client"
+  ],
+  "include": [
+    "src/**/*.ts", "src/**/*.d.ts"
+  ]
+}

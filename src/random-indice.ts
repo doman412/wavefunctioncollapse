@@ -1,11 +1,9 @@
-"use strict";
-
 /**
  *
  * @param {number[]} array
  * @param {float} r
  */
-function randomIndice (array, r) {
+export default function randomIndice (array: number[], r: number) {
   let sum = 0;
   let x = 0;
   let i = 0;
@@ -27,5 +25,3 @@ function randomIndice (array, r) {
 
   return 0;
 }
-
-module.exports = randomIndice;
