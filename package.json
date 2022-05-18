@@ -2,11 +2,14 @@
   "name": "wavefunctioncollapse",
   "version": "0.9.0",
   "description": "Javascript port of https://github.com/mxgmn/WaveFunctionCollapse",
-  "main": "index.js",
+  "main": "dist/wfc.umd.js",
+  "module": "dist/wfc.es.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "dev": "run-p dev:tsc dev:vite",
-    "dev:vite": "vite serve example --port 3003",
+    "dev:vite": "vite build --watch --mode development",
     "dev:tsc": "tsc -w --emitDeclarationOnly",
+    "examples": "vite serve example --port 3003",
     "build": "vite build",
     "prepublishOnly": "npm run build"
   },

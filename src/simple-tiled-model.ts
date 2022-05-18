@@ -1,4 +1,4 @@
-import Model, { RNG } from './model'
+import Model, { RNG, DIRS, dirName, Boundaries, Direction } from './model'
 
 /**
  *
@@ -15,17 +15,38 @@ export default class SimpleTiledModel extends Model {
   periodic: boolean
   tilesize: number
 
-  tiles: Array<{name: string, pixels: Array<[number, number, number, number]>}>
+  tiles: Array<Tile>
 
   tilemap: Array<SimpleTiledModel['tiles'][number]> = []
 
-  constructor(data: SimpleTiledData, subsetName: string, width: number, height: number, periodic: boolean) {
+  constructor(data: SimpleTiledData, subsetName: string|null, width: number, height: number, periodic: boolean) {
     super()
     const tilesize = data.tilesize || 16;
   
-    this.FMX = width;
-    this.FMY = height;
-    this.FMXxFMY = width * height;
+    this.WIDTH = width;
+    this.HEIGHT = height;
+    this.NODES_TOTAL = width * height;
+
+    // generate the boundary node id to coord maps
+    this.BOUNDARY_NODE_MAP = []
+    // LEFT
+    for(let y=0; y<this.HEIGHT; y++){
+      this.BOUNDARY_NODE_MAP.push([-1, y])
+    }
+    // UP
+    for(let x=0; x<this.WIDTH; x++){
+      this.BOUNDARY_NODE_MAP.push([x, this.HEIGHT])
+    }
+    // RIGHT
+    for(let y=this.HEIGHT-1; y>=0; y--){
+      this.BOUNDARY_NODE_MAP.push([this.WIDTH, y])
+    }
+    // DOWN
+    for(let x=this.WIDTH-1; x>=0; x--){
+      this.BOUNDARY_NODE_MAP.push([x, -1])
+    }
+    this.BOUNDARY_NODES_TOTAL = this.BOUNDARY_NODE_MAP.length
+
   
     this.periodic = periodic;
     this.tilesize = tilesize;
@@ -37,7 +58,7 @@ export default class SimpleTiledModel extends Model {
       subset = data.subsets[subsetName];
     }
   
-    const tile = function tile (currTile: SimpleTiledDataTile, f: (x: number, y: number)=>[number, number, number, number]) {
+    const tile = (currTile: SimpleTiledDataTile, f: (x: number, y: number)=>[number, number, number, number]): Tile => {
       const pixels = new Array<[number, number, number, number]>(tilesize * tilesize);
   
       for (let y = 0; y < tilesize; y++) {
@@ -46,7 +67,7 @@ export default class SimpleTiledModel extends Model {
         }
       }
   
-      return {name: currTile.name, pixels};
+      return {id: this.tiles.length, name: currTile.name, pixels};
     };
   
     const rotate = function rotate (currTile: SimpleTiledDataTile, array: Array<[number, number, number, number]>) {
@@ -135,21 +156,21 @@ export default class SimpleTiledModel extends Model {
           break;
       }
   
-      this.T = action.length;
-      firstOccurrence[currentTile.name] = this.T;
+      this.TILES_TOTAL = action.length;
+      firstOccurrence[currentTile.name] = this.TILES_TOTAL;
       for (let t = 0; t < cardinality; t++) {
         action.push([
-          this.T + t,
-          this.T + funcA(t),
-          this.T + funcA(funcA(t)),
-          this.T + funcA(funcA(funcA(t))),
-          this.T + funcB(t),
-          this.T + funcB(funcA(t)),
-          this.T + funcB(funcA(funcA(t))),
-          this.T + funcB(funcA(funcA(funcA(t))))
+          this.TILES_TOTAL + t,
+          this.TILES_TOTAL + funcA(t),
+          this.TILES_TOTAL + funcA(funcA(t)),
+          this.TILES_TOTAL + funcA(funcA(funcA(t))),
+          this.TILES_TOTAL + funcB(t),
+          this.TILES_TOTAL + funcB(funcA(t)),
+          this.TILES_TOTAL + funcB(funcA(funcA(t))),
+          this.TILES_TOTAL + funcB(funcA(funcA(funcA(t))))
         ]);
       }
-      console.log(currentTile.name, currentTile.symmetry, cardinality, action.slice())
+      // console.log(currentTile.name, currentTile.symmetry, cardinality, action.slice())
   
       if (unique) {
         for (let t = 0; t < cardinality; t++) {
@@ -175,7 +196,7 @@ export default class SimpleTiledModel extends Model {
         }));
         
         for (let t = 1; t < cardinality; t++) {
-          this.tiles.push(t < 4 ? rotate(currentTile, this.tiles[this.T + t - 1].pixels) : reflect(currentTile, this.tiles[this.T + t - 4].pixels));
+          this.tiles.push(t < 4 ? rotate(currentTile, this.tiles[this.TILES_TOTAL + t - 1].pixels) : reflect(currentTile, this.tiles[this.TILES_TOTAL + t - 4].pixels));
         }
       }
   
@@ -185,21 +206,24 @@ export default class SimpleTiledModel extends Model {
   
     }
   
-    this.T = action.length;
-    console.log(action)
-    console.log(firstOccurrence)
+    this.TILES_TOTAL = action.length;
+    // console.log(action)
+    // console.log(firstOccurrence)
     this.weights = tempStationary;
   
     this.propagator = new Array(4);
     const tempPropagator = new Array(4);
   
-    for (let i = 0; i < 4; i++) {
-      this.propagator[i] = new Array(this.T);
-      tempPropagator[i] = new Array(this.T);
-      for (let t = 0; t < this.T; t++) {
-        tempPropagator[i][t] = new Array(this.T);
-        for (let t2 = 0; t2 < this.T; t2++) {
-          tempPropagator[i][t][t2] = false;
+    // for each direction initialize the propagator
+    for(const dir of DIRS){
+      this.propagator[dir] = new Array(this.TILES_TOTAL);
+      tempPropagator[dir] = new Array(this.TILES_TOTAL);
+      // we first initialize a temp propagator and set all the values to false.
+      // this loop creates a 2d array that says whether a tile can be next to another
+      for (let tileId1 = 0; tileId1 < this.TILES_TOTAL; tileId1++) {
+        tempPropagator[dir][tileId1] = new Array(this.TILES_TOTAL);
+        for (let tileId2 = 0; tileId2 < this.TILES_TOTAL; tileId2++) {
+          tempPropagator[dir][tileId1][tileId2] = false;
         }
       }
     }
@@ -207,58 +231,60 @@ export default class SimpleTiledModel extends Model {
     for (let i = 0; i < data.neighbors.length; i++) {
       const neighbor = data.neighbors[i];
   
-      const left = neighbor.left.split(' ').filter(function (v) {
+      const [left, leftOffset] = neighbor.left.split(' ').filter(function (v) {
         return v.length;
-      });
-      const right = neighbor.right.split(' ').filter(function (v) {
+      }) as [string, string|undefined]
+      const [right, rightOffset] = neighbor.right.split(' ').filter(function (v) {
         return v.length;
-      });
+      }) as [string, string|undefined]
   
-      if (subset !== null && (subset.indexOf(left[0]) === -1 || subset.indexOf(right[0]) === -1)) {
+      if (subset !== null && (subset.indexOf(left) === -1 || subset.indexOf(right) === -1)) {
         continue;
       }
   
-      console.log(left, right)
-      const L = action[firstOccurrence[left[0]]][left.length == 1 ? 0 : parseInt(left[1], 10)];
-      const D = action[L][1];
-      const R = action[firstOccurrence[right[0]]][right.length == 1 ? 0 : parseInt(right[1], 10)];
-      const U = action[R][1];
-      console.log(L, D, R, U)
+      // console.log('left  >', left,  firstOccurrence[left])
+      // console.log('right >', right, firstOccurrence[right])
+      const LEFT_TILE_ID = action[firstOccurrence[left]][leftOffset == null ? 0 : parseInt(leftOffset)]
+      const DOWN_TILE_ID = action[LEFT_TILE_ID][1]
+      const RIGHT_TILE_ID = action[firstOccurrence[right]][rightOffset == null ? 0 : parseInt(rightOffset)]
+      const UP_TILE_ID = action[RIGHT_TILE_ID][1]
+      // console.log(LEFT_TILE_ID, DOWN_TILE_ID, RIGHT_TILE_ID, UP_TILE_ID)
   
-      tempPropagator[0][R][L] = true;
-      tempPropagator[0][action[R][6]][action[L][6]] = true;
-      tempPropagator[0][action[L][4]][action[R][4]] = true;
-      tempPropagator[0][action[L][2]][action[R][2]] = true;
+      tempPropagator[0][RIGHT_TILE_ID][LEFT_TILE_ID] = true;
+      tempPropagator[0][action[RIGHT_TILE_ID][6]][action[LEFT_TILE_ID][6]] = true;
+      tempPropagator[0][action[LEFT_TILE_ID][4]][action[RIGHT_TILE_ID][4]] = true;
+      tempPropagator[0][action[LEFT_TILE_ID][2]][action[RIGHT_TILE_ID][2]] = true;
+      // console.log('left temp propagator', tempPropagator[0])
   
-      tempPropagator[1][U][D] = true;
-      tempPropagator[1][action[D][6]][action[U][6]] = true;
-      tempPropagator[1][action[U][4]][action[D][4]] = true;
-      tempPropagator[1][action[D][2]][action[U][2]] = true;
-      console.log(tempPropagator)
+      tempPropagator[1][UP_TILE_ID][DOWN_TILE_ID] = true;
+      tempPropagator[1][action[DOWN_TILE_ID][6]][action[UP_TILE_ID][6]] = true;
+      tempPropagator[1][action[UP_TILE_ID][4]][action[DOWN_TILE_ID][4]] = true;
+      tempPropagator[1][action[DOWN_TILE_ID][2]][action[UP_TILE_ID][2]] = true;
+      // console.log(tempPropagator)
     }
   
-    for (let t = 0; t < this.T; t++) {
-      for (let t2 = 0; t2 < this.T; t2++) {
-        tempPropagator[2][t][t2] = tempPropagator[0][t2][t];
-        tempPropagator[3][t][t2] = tempPropagator[1][t2][t];
+    for (let tileId1 = 0; tileId1 < this.TILES_TOTAL; tileId1++) {
+      for (let tileId2 = 0; tileId2 < this.TILES_TOTAL; tileId2++) {
+        tempPropagator[2][tileId1][tileId2] = tempPropagator[0][tileId2][tileId1];
+        tempPropagator[3][tileId1][tileId2] = tempPropagator[1][tileId2][tileId1];
       }
     }
   
-    for (let d = 0; d < 4; d++) {
-      for (let t1 = 0; t1 < this.T; t1++) {
+    for (const dir of DIRS) {
+      for (let tileId1 = 0; tileId1 < this.TILES_TOTAL; tileId1++) {
         const sp = [];
-        const tp = tempPropagator[d][t1];
+        const tp = tempPropagator[dir][tileId1];
   
-        for (let t2 = 0; t2 < this.T; t2++) {
-          if (tp[t2]) {
-            sp.push(t2);
+        for (let tileId2 = 0; tileId2 < this.TILES_TOTAL; tileId2++) {
+          if (tp[tileId2]) {
+            sp.push(tileId2);
           }
         }
   
-        this.propagator[d][t1] = sp;
+        this.propagator[dir][tileId1] = sp;
       }
     }
-    console.log(this.propagator)
+    // console.log('propagator', this.propagator)
   }
 
   /**
@@ -271,8 +297,16 @@ export default class SimpleTiledModel extends Model {
    * @protected
    */
   onBoundary (x: number, y: number) {
-    return !this.periodic && (x < 0 || y < 0 || x >= this.FMX || y >= this.FMY);
-  };
+    const isOnBoundary = !this.periodic && (x < 0 || y < 0 || x >= this.WIDTH || y >= this.HEIGHT);
+    // if(isOnBoundary){
+    //   console.log(x, y)
+    // }
+    return isOnBoundary
+  }
+
+  tileName(tileId: number): string {
+    return this.tiles[tileId].name
+  }
 
   /**
    * Retrieve the RGBA data
@@ -285,7 +319,7 @@ export default class SimpleTiledModel extends Model {
    * @public
    */
   graphics (array: Uint8Array|Uint8ClampedArray, defaultColor?: Uint8Array|Uint8ClampedArray) {
-    array = array || new Uint8Array(this.FMXxFMY * this.tilesize * this.tilesize * 4);
+    array = array || new Uint8Array(this.NODES_TOTAL * this.tilesize * this.tilesize * 4);
 
     if (this.isGenerationComplete()) {
       this.graphicsComplete(array);
@@ -304,13 +338,13 @@ export default class SimpleTiledModel extends Model {
    * @protected
    */
   graphicsComplete (array: Uint8Array|Uint8ClampedArray) {
-    for (let x = 0; x < this.FMX; x++) {
-      for (let y = 0; y < this.FMY; y++) {
-        const tile = this.tiles[this.observed[x + y * this.FMX]].pixels;
+    for (let x = 0; x < this.WIDTH; x++) {
+      for (let y = 0; y < this.HEIGHT; y++) {
+        const tile = this.tiles[this.observed[this.coordinatesToNodeId(x, y)]].pixels;
 
         for (let yt = 0; yt < this.tilesize; yt++) {
           for (let xt = 0; xt < this.tilesize; xt++) {
-            const pixelIndex = (x * this.tilesize + xt + (y * this.tilesize + yt) * this.FMX * this.tilesize) * 4;
+            const pixelIndex = (x * this.tilesize + xt + (y * this.tilesize + yt) * this.WIDTH * this.tilesize) * 4;
             const color = tile[xt + yt * this.tilesize];
 
             array[pixelIndex] = color[0];
@@ -336,13 +370,13 @@ export default class SimpleTiledModel extends Model {
       defaultColor = false;
     }
 
-    for (let x = 0; x < this.FMX; x++) {
-      for (let y = 0; y < this.FMY; y++) {
-        const w = this.wave[x + y * this.FMX];
+    for (let x = 0; x < this.WIDTH; x++) {
+      for (let y = 0; y < this.HEIGHT; y++) {
+        const w = this.wave[this.coordinatesToNodeId(x, y)];
         let amount = 0;
         let sumWeights = 0;
 
-        for (let t = 0; t < this.T; t++) {
+        for (let t = 0; t < this.TILES_TOTAL; t++) {
           if (w[t]) {
             amount++;
             sumWeights += this.weights[t];
@@ -353,9 +387,9 @@ export default class SimpleTiledModel extends Model {
 
         for (let yt = 0; yt < this.tilesize; yt++) {
           for (let xt = 0; xt < this.tilesize; xt++) {
-            const pixelIndex = (x * this.tilesize + xt + (y * this.tilesize + yt) * this.FMX * this.tilesize) * 4;
+            const pixelIndex = (x * this.tilesize + xt + (y * this.tilesize + yt) * this.WIDTH * this.tilesize) * 4;
 
-            if (defaultColor && amount === this.T) {
+            if (defaultColor && amount === this.TILES_TOTAL) {
               array[pixelIndex] = defaultColor[0];
               array[pixelIndex + 1] = defaultColor[1];
               array[pixelIndex + 2] = defaultColor[2];
@@ -366,7 +400,7 @@ export default class SimpleTiledModel extends Model {
               let b = 0;
               let a = 0;
 
-              for (let t = 0; t < this.T; t++) {
+              for (let t = 0; t < this.TILES_TOTAL; t++) {
                 if (w[t]) {
                   const c = this.tiles[t].pixels[xt + yt * this.tilesize];
                   const weight = this.weights[t] * lambda;
@@ -388,12 +422,19 @@ export default class SimpleTiledModel extends Model {
     }
   }
 
-  generate(rng?: RNG): boolean {
-    let result = super.generate(rng)
+  generate(arg?: RNG | ({rng?: RNG}&Boundaries)): boolean {
+    let result = super.generate(arg)
     // generate tilemap
-    this.observed.forEach((tileIndex, ix)=>{
-      this.tilemap[ix] = this.tiles[tileIndex]
+    this.observed.forEach((tileId, nodeId)=>{
+      this.tilemap[nodeId] = this.tiles[tileId]
     })
+    // set the observed edges
+    // console.log('boundary index; left', Array(this.HEIGHT).fill(null).map((_, ix)=>[ix*this.WIDTH, this.observed[ix*this.WIDTH]]))
+    this.boundaries.left = Array(this.HEIGHT).fill(null).map((_, ix)=>this.observed[ix*this.WIDTH])
+    this.boundaries.up = this.observed.slice(this.WIDTH*(this.HEIGHT-1))
+    // console.log('boundary index; right', Array(this.HEIGHT).fill(null).map((_, ix)=>[ix*this.WIDTH+9, this.observed[ix*this.WIDTH+9]]).reverse())
+    this.boundaries.right = Array(this.HEIGHT).fill(null).map((_, ix)=>this.observed[ix*this.WIDTH+9]).reverse()
+    this.boundaries.down = this.observed.slice(0, this.WIDTH)
     return result
   }
 }
@@ -417,4 +458,10 @@ export interface SimpleTiledData {
   subsets?: {
     [name: string]: string[]
   }
+}
+
+export interface Tile {
+  id: number
+  name: string
+  pixels: Array<[number, number, number, number]>
 }
